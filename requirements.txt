@@ -1,0 +1,10 @@
+# Environment
+python-dotenv==1.0.0
+
+# Testing
+pytest==7.4.3
+pytest-cov==4.1.0
+
+# Dev dependencies (uncomment if needed for local testing)
+# fastapi
+# uvicorn
