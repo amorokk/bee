@@ -147,12 +147,22 @@ def _extract_projects(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 def extract_sale_statuses(item: Dict[str, Any]) -> Dict[str, List[int]]:
-    statuses: Dict[str, List[int]] = {"fixed_list": []}
-    lst = item.get("fixed_list")
-    if isinstance(lst, list):
-        for entry in lst:
+    statuses: Dict[str, List[int]] = {"fixed_list": [], "fixable_list": []}
+    
+    # Извлекаем fixed_list (фиксированные продукты с блокировкой)
+    fixed_lst = item.get("fixed_list")
+    if isinstance(fixed_lst, list):
+        for entry in fixed_lst:
             if isinstance(entry, dict) and "sale_status" in entry:
                 statuses["fixed_list"].append(entry["sale_status"])
+    
+    # Извлекаем fixable_list (гибкие продукты без блокировки)
+    fixable_lst = item.get("fixable_list")
+    if isinstance(fixable_lst, list):
+        for entry in fixable_lst:
+            if isinstance(entry, dict) and "sale_status" in entry:
+                statuses["fixable_list"].append(entry["sale_status"])
+    
     return statuses
 
 
@@ -200,8 +210,8 @@ def fetch_projects_with_apr_gt(threshold: float, force_refresh: bool = False) ->
             return cached
     
     results: List[Dict[str, Any]] = []
-    # Ограничиваем количество страниц для экономии времени
-    pages_to_fetch = min(config.MAX_PAGES_TO_FETCH, config.TOTAL_PAGES)
+    # Используем все доступные страницы
+    pages_to_fetch = config.TOTAL_PAGES
     page_numbers = list(range(1, pages_to_fetch + 1))
     logger.info(f"🔍 Запрос {pages_to_fetch} страниц ({config.MAX_WORKERS} потоков)...")
 

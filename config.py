@@ -36,7 +36,6 @@ class Config:
     # =========================
     MAX_WORKERS: int = 2  # Было 8 - слишком агрессивно!
     TOTAL_PAGES: int = 112
-    MAX_PAGES_TO_FETCH: int = 20  # Ограничение для /filter
     LIMIT_PER_PAGE: int = 7
     
     # =========================
@@ -128,12 +127,6 @@ class Config:
             warnings.append(
                 f"⚠️  MIN_REQUEST_INTERVAL={self.MIN_REQUEST_INTERVAL} слишком низкий! "
                 f"Рекомендуется >= 2.0 секунд."
-            )
-        
-        if self.MAX_PAGES_TO_FETCH > 30:
-            warnings.append(
-                f"⚠️  MAX_PAGES_TO_FETCH={self.MAX_PAGES_TO_FETCH} может быть слишком много. "
-                f"Рекомендуется 20-30 для баланса между скоростью и полнотой данных."
             )
         
         # Вывод результатов валидации

@@ -244,15 +244,24 @@ def _check_once() -> None:
         # successful fetch
         any_success = True
         
-        # Используем TokenStatus для красивого форматирования
-        token_status = TokenStatus.from_api_response(info)
+        # Получаем старый статус для извлечения типа списка (fixed/flexible)
+        old_status_str = state.watch.get(chat_id, {}).get(coin)
+        list_type = 'fixed'
+        if old_status_str:
+            try:
+                old_status_obj = TokenStatus.from_string(coin, old_status_str)
+                list_type = old_status_obj.list_type
+            except Exception:
+                pass
+
+        # Используем TokenStatus для красивого форматирования с правильным типом
+        token_status = TokenStatus.from_api_response(info, list_type=list_type)
         current_status = token_status.to_string()
         
-        # Проверяем изменился ли fixed_list (без учета timestamp)
-        old_status_str = state.watch.get(chat_id, {}).get(coin)
+        # Проверяем изменился ли активный список (без учета timestamp)
         if old_status_str:
             old_status = TokenStatus.from_string(coin, old_status_str)
-            status_changed = old_status.fixed_list != token_status.fixed_list
+            status_changed = old_status.get_active_list() != token_status.get_active_list()
         else:
             status_changed = True  # Первая проверка после подписки
         
@@ -267,7 +276,7 @@ def _check_once() -> None:
             send_message(
                 chat_id, 
                 f"{emoji} {coin.upper()}: {status_text}{apr_text}\n"
-                f"Статус изменился: {token_status.fixed_list}"
+                f"Статус изменился: {token_status.get_active_list()}"
             )
     
     # Если после ошибки получили успешный ответ - уведомляем о восстановлении
@@ -383,7 +392,7 @@ def _handle_text(chat_id: str, text: str) -> None:
             "🔔 /resume — возобновить уведомления\n"
             "�📊 /status — состояние бота\n"
             "❓ /help — эта справка\n\n"
-            "Отправь тикер монеты (например: algo), чтобы подписаться на изменения sale_status.",
+            "Отправь тикер монеты (например: algo), чтобы подписаться на изменения статуса гибких продуктов.",
         )
         return
     
@@ -541,19 +550,31 @@ def _handle_text(chat_id: str, text: str) -> None:
     if clean.lower().startswith("/filter"):
         parts = clean.split()
         if len(parts) < 2:
-            send_message(chat_id, "Использование: /filter <percent> (например: /filter 200)")
+            send_message(chat_id, "Использование: /filter <percent> [fixed|flexible]\nПример: /filter 200 fixed (по умолчанию)")
             return
         try:
             percent = float(parts[1])
         except ValueError:
             send_message(chat_id, "Некорректное значение процента.")
             return
+        
+        # Определяем тип списка (fixed по умолчанию)
+        list_type = 'fixed'
+        if len(parts) >= 3:
+            type_arg = parts[2].lower()
+            if type_arg in ['flexible', 'flex', 'flexable']:
+                list_type = 'flexible'
+            elif type_arg in ['fixed', 'fix']:
+                list_type = 'fixed'
+            else:
+                send_message(chat_id, f"Неизвестный тип: {type_arg}. Использую 'fixed'.")
 
         threshold = percent / 100.0
-        send_message(chat_id, f"🔍 Ищу монеты с sort_apr > {percent}%...")
+        list_label = "📌 Фиксированные" if list_type == 'fixed' else "🔄 Гибкие"
+        send_message(chat_id, f"🔍 Ищу {list_label.lower()} продукты с APR > {percent}%...")
         items = fetch_projects_with_apr_gt(threshold)
         if not items:
-            send_message(chat_id, "❌ Монеты по фильтру не найдены.")
+            send_message(chat_id, f"❌ {list_label} продукты по фильтру не найдены.")
             return
 
         state.add_subscriber(chat_id)
@@ -563,12 +584,15 @@ def _handle_text(chat_id: str, text: str) -> None:
             coin = str(item.get("asset", "")).lower()
             if not coin:
                 continue
-            fixed = extract_sale_statuses(item).get("fixed_list", [])
-            if not fixed:
+            
+            # Проверяем наличие продуктов выбранного типа
+            statuses = extract_sale_statuses(item)
+            active_statuses = statuses.get(f"{list_type}_list", [])
+            if not active_statuses:
                 continue
             
             # Используем TokenStatus для красивого вывода
-            token_status = TokenStatus.from_api_response(item)
+            token_status = TokenStatus.from_api_response(item, list_type=list_type)
             status = token_status.to_string()
             state.set_watch(chat_id, coin, status)
             added += 1
@@ -578,12 +602,12 @@ def _handle_text(chat_id: str, text: str) -> None:
         send_message(
             chat_id,
             f"✅ Подписка по фильтру создана.\n"
-            + f"📊 Добавлено монет: {added}. Проверяю каждые {interval_min} минут.\n\n"
+            + f"{list_label}: {added} монет. Проверяю каждые {interval_min} минут.\n\n"
             + "ℹ️ [1] = доступен для покупки, [2] = продан.\n"
             + "Текущие статусы:\n"
             + "\n".join(added_lines[:20])  # Показываем первые 20
             + (f"\n... и еще {len(added_lines) - 20}" if len(added_lines) > 20 else "")
-            if added_lines else "✅ Подписка создана, но подходящих монет сейчас нет.",
+            if added_lines else f"✅ Подписка создана, но подходящих {list_label.lower()} продуктов сейчас нет.",
         )
         return
     

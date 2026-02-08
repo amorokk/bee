@@ -1,0 +1,20 @@
+[Unit]
+Description=Bee Telegram Bot - Gate.com Monitoring
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/bee
+ExecStart=/opt/bee/.venv/bin/python /opt/bee/telegram_bot.py
+
+# Автоматический перезапуск при падении
+Restart=always
+RestartSec=10
+
+# Логирование
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=bee-bot
+
+[Install]
+WantedBy=multi-user.target

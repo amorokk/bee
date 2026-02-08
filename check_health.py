@@ -84,7 +84,7 @@ def check_components():
     
     # Models
     from models import TokenStatus
-    status = TokenStatus(coin="test", fixed_list=[1, 2])
+    status = TokenStatus(coin="test", fixed_list=[1, 2], fixable_list=[1])
     print(f"  ✅ TokenStatus: {status.coin} - {status.get_status_emoji()}")
     
     # Utils

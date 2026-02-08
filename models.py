@@ -16,12 +16,16 @@ class TokenStatus:
     
     Attributes:
         coin: Название монеты (нижний регистр)
-        fixed_list: Список статусов fixed продуктов (1=доступен, 2=продан)
+        fixed_list: Список статусов фиксированных продуктов (1=доступен, 2=продан)
+        fixable_list: Список статусов гибких продуктов (1=доступен, 2=продан)
+        list_type: Тип списка для мониторинга ('fixed' или 'fixable')
         sort_apr: APR процент для сортировки
         timestamp: Время получения данных
     """
     coin: str
     fixed_list: List[int]
+    fixable_list: List[int]
+    list_type: str = 'fixed'  # По умолчанию фиксированный
     sort_apr: Optional[float] = None
     timestamp: datetime = None
     
@@ -34,18 +38,19 @@ class TokenStatus:
         self.coin = self.coin.lower()
     
     @classmethod
-    def from_api_response(cls, item: Dict[str, Any]) -> 'TokenStatus':
+    def from_api_response(cls, item: Dict[str, Any], list_type: str = 'fixed') -> 'TokenStatus':
         """
         Создать TokenStatus из ответа API.
         
         Args:
             item: Словарь с данными из API
+            list_type: Тип списка для мониторинга ('fixed' или 'fixable')
             
         Returns:
             TokenStatus объект
         
         Example:
-            >>> item = {"asset": "ALGO", "sale_status": [{"fixed": 1}], "sort_apr": "5.2"}
+            >>> item = {"asset": "ALGO", "fixed_list": [{"sale_status": 1}], "sort_apr": "5.2"}
             >>> status = TokenStatus.from_api_response(item)
             >>> status.coin
             'algo'
@@ -55,11 +60,14 @@ class TokenStatus:
         coin = str(item.get('asset', '')).lower()
         statuses = extract_sale_statuses(item)
         fixed_list = statuses.get('fixed_list', [])
+        fixable_list = statuses.get('fixable_list', [])
         sort_apr = _sort_apr_percent(item)
         
         return cls(
             coin=coin,
             fixed_list=fixed_list,
+            fixable_list=fixable_list,
+            list_type=list_type,
             sort_apr=sort_apr,
             timestamp=datetime.now()
         )
@@ -73,6 +81,8 @@ class TokenStatus:
         """
         return json.dumps({
             'fixed_list': self.fixed_list,
+            'fixable_list': self.fixable_list,
+            'list_type': self.list_type,
             'sort_apr': self.sort_apr,
             'timestamp': self.timestamp.isoformat() if self.timestamp else None
         })
@@ -97,9 +107,15 @@ class TokenStatus:
         return cls(
             coin=coin,
             fixed_list=data.get('fixed_list', []),
+            fixable_list=data.get('fixable_list', []),
+            list_type=data.get('list_type', 'fixed'),
             sort_apr=data.get('sort_apr'),
             timestamp=timestamp or datetime.now()
         )
+    
+    def get_active_list(self) -> List[int]:
+        """Получить активный список в зависимости от list_type."""
+        return self.fixed_list if self.list_type == 'fixed' else self.fixable_list
     
     def is_available(self) -> bool:
         """
@@ -108,7 +124,7 @@ class TokenStatus:
         Returns:
             True если хотя бы один продукт доступен (status=1)
         """
-        return any(s == 1 for s in self.fixed_list)
+        return any(s == 1 for s in self.get_active_list())
     
     def is_sold_out(self) -> bool:
         """
@@ -117,7 +133,8 @@ class TokenStatus:
         Returns:
             True если все продукты распроданы (status=2)
         """
-        return len(self.fixed_list) > 0 and all(s == 2 for s in self.fixed_list)
+        active_list = self.get_active_list()
+        return len(active_list) > 0 and all(s == 2 for s in active_list)
     
     def is_partially_available(self) -> bool:
         """
@@ -126,8 +143,9 @@ class TokenStatus:
         Returns:
             True если есть и доступные (1) и распроданные (2) продукты
         """
-        has_available = any(s == 1 for s in self.fixed_list)
-        has_sold = any(s == 2 for s in self.fixed_list)
+        active_list = self.get_active_list()
+        has_available = any(s == 1 for s in active_list)
+        has_sold = any(s == 2 for s in active_list)
         return has_available and has_sold
     
     def get_status_emoji(self) -> str:
@@ -153,8 +171,10 @@ class TokenStatus:
         Returns:
             Человекопонятное описание
         """
-        if not self.fixed_list:
-            return "нет фиксированных продуктов"
+        active_list = self.get_active_list()
+        list_name = "фиксированных" if self.list_type == 'fixed' else "гибких"
+        if not active_list:
+            return f"нет {list_name} продуктов"
         elif self.is_partially_available():
             return "частично доступен"
         elif self.is_available():
@@ -162,7 +182,7 @@ class TokenStatus:
         elif self.is_sold_out():
             return "распродан"
         else:
-            return f"статус неизвестен ({self.fixed_list})"
+            return f"статус неизвестен ({active_list})"
     
     def format_for_user(self) -> str:
         """
@@ -175,24 +195,28 @@ class TokenStatus:
         status_text = self.get_status_text()
         # API возвращает APR в долях (0.0246 = 2.46%), умножаем на 100
         apr_text = f" (APR: {self.sort_apr * 100:.2f}%)" if self.sort_apr else ""
+        active_list = self.get_active_list()
+        list_label = "📌" if self.list_type == 'fixed' else "🔄"
         
-        return f"{self.coin.upper()}: {emoji} {status_text} {self.fixed_list}{apr_text}"
+        return f"{list_label} {self.coin.upper()}: {emoji} {status_text} {active_list}{apr_text}"
     
     def __eq__(self, other: Any) -> bool:
         """
         Сравнение статусов.
         
-        Два статуса равны, если у них одинаковый coin и fixed_list.
+        Два статуса равны, если у них одинаковый coin, list_type и активный список.
         sort_apr и timestamp не учитываются.
         """
         if not isinstance(other, TokenStatus):
             return False
-        return self.coin == other.coin and self.fixed_list == other.fixed_list
+        return (self.coin == other.coin and 
+                self.list_type == other.list_type and
+                self.get_active_list() == other.get_active_list())
     
     def __hash__(self) -> int:
         """Хеш для использования в set/dict."""
-        return hash((self.coin, tuple(self.fixed_list)))
+        return hash((self.coin, self.list_type, tuple(self.get_active_list())))
     
     def __repr__(self) -> str:
         """Представление для отладки."""
-        return f"TokenStatus(coin={self.coin!r}, fixed_list={self.fixed_list}, sort_apr={self.sort_apr})"
+        return f"TokenStatus(coin={self.coin!r}, list_type={self.list_type!r}, fixed_list={self.fixed_list}, fixable_list={self.fixable_list}, sort_apr={self.sort_apr})"

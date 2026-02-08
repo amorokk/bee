@@ -21,15 +21,17 @@ app = FastAPI(lifespan=lifespan)
 TOGGLE_INTERVAL = float(os.environ.get("TEST_TOGGLE_INTERVAL", "5"))
 
 _state_lock = threading.Lock()
-_state: Dict[str, List[int]] = {"fixed_list": [1]}
+_state: Dict[str, List[int]] = {"fixed_list": [1], "fixable_list": [1]}
 
 
 def _toggle_loop() -> None:
     while True:
         time.sleep(TOGGLE_INTERVAL)
         with _state_lock:
-            current = _state["fixed_list"]
-            _state["fixed_list"] = [2] if current == [1] else [1]
+            current_fixed = _state["fixed_list"]
+            current_fixable = _state["fixable_list"]
+            _state["fixed_list"] = [2] if current_fixed == [1] else [1]
+            _state["fixable_list"] = [2] if current_fixable == [1] else [1]
 
 
 # startup handled by lifespan
@@ -57,6 +59,7 @@ def list_market(
 
     with _state_lock:
         fixed = _state["fixed_list"]
+        fixable = _state["fixable_list"]
 
     item = {
         "id": 1,
@@ -64,6 +67,6 @@ def list_market(
         "name": "Algorand",
         "sort_apr": "2.50",
         "fixed_list": [{"sale_status": fixed[0]}],
-        "fixable_list": [],
+        "fixable_list": [{"sale_status": fixable[0]}],
     }
     return {"code": 0, "message": "ok", "data": [item]}
